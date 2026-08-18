@@ -1,18 +1,56 @@
+import re
+import unicodedata
+from urllib.parse import quote_plus
+
 import streamlit as st
 
-# 1. إعداد واجهة البرنامج وتنسيق الصفحة
+
+# إعداد الصفحة
 st.set_page_config(
-    page_title="دليل الخرج الشامل", page_icon="🌟", layout="centered"
+    page_title="دليل الخرج الشامل",
+    page_icon="🌟",
+    layout="centered",
+)
+
+# دعم اتجاه الكتابة من اليمين إلى اليسار
+st.markdown(
+    """
+    <style>
+        .stApp {
+            direction: rtl;
+            text-align: right;
+        }
+
+        section[data-testid="stSidebar"] {
+            direction: rtl;
+            text-align: right;
+        }
+
+        div[data-testid="stTextInput"] input {
+            direction: rtl;
+            text-align: right;
+        }
+
+        div[data-testid="stSelectbox"] {
+            direction: rtl;
+            text-align: right;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.title("🌟 دليل الخرج الشامل للتصنيفات والمعالم")
 st.markdown(
-    "استكشف جميع الأماكن والمقاهي والمعالم في الخرج، مع إمكانية التصفية"
-    " حسب أي تصنيف، الترتيب حسب التقييم أو الأبجدية، والبحث المباشر وفتح"
-    " المواقع على خرائط جوجل."
+    """
+    استكشف الأماكن والمقاهي والمعالم في الخرج، مع إمكانية التصفية حسب
+    التصنيف، والترتيب حسب التقييم أو الأبجدية، والبحث المباشر، وفتح
+    المواقع على خرائط Google.
+    """
 )
 
-# 2. قاعدة البيانات الشاملة القابلة للتصنيف
+
+# قاعدة البيانات
 attractions = [
     {
         "name": "أبارت كافيه (Apart Cafe)",
@@ -20,8 +58,8 @@ attractions = [
         "rating": 4.9,
         "location": "الخرج",
         "desc": (
-            "مقهى متخصص عصري يتميز بديكورات راقية وجلسات هادئة، ويقدم تشكيلة"
-            " مميزة من القهوة المختصة والمخبوزات الطازجة."
+            "مقهى متخصص عصري يتميز بديكورات راقية وجلسات هادئة، "
+            "ويقدم تشكيلة مميزة من القهوة المختصة والمخبوزات الطازجة."
         ),
     },
     {
@@ -30,8 +68,8 @@ attractions = [
         "rating": 4.8,
         "location": "وسط الخرج",
         "desc": (
-            "من أهم المعالم التاريخية، بُني في عام 1359 هـ بتصميم معماري نجدي فريد"
-            " من الطين."
+            "من أهم المعالم التاريخية، بني في عام 1359 هـ "
+            "بتصميم معماري نجدي فريد من الطين."
         ),
     },
     {
@@ -39,87 +77,173 @@ attractions = [
         "category": "سياحة بيئية",
         "rating": 4.7,
         "location": "الخرج",
-        "desc": "تشتهر بمزارع النخيل الشاسعة وتوفر تجارب سياحة ريفية فريدة.",
+        "desc": (
+            "تشتهر بمزارع النخيل الشاسعة وتوفر تجارب سياحة ريفية فريدة."
+        ),
     },
     {
         "name": "عيون الخرج (عين الضلع)",
         "category": "طبيعة",
         "rating": 4.5,
         "location": "أطراف الخرج",
-        "desc": "عيون أرتوازية طبيعية تاريخية كانت شريان الحياة الزراعي قديماً.",
+        "desc": (
+            "عيون ارتوازية طبيعية تاريخية كانت شريان الحياة الزراعي قديما."
+        ),
     },
     {
         "name": "منتزه البرج",
         "category": "منتزهات وترفيه",
         "rating": 4.2,
         "location": "الخرج",
-        "desc": "وجهة عائلية ممتازة تضم مساحات خضراء ومناطق ألعاب أطفال.",
+        "desc": (
+            "وجهة عائلية ممتازة تضم مساحات خضراء ومناطق ألعاب أطفال."
+        ),
     },
 ]
 
-# 3. الشريط الجانبي: التصفية الديناميكية والترتيب
+
+def normalize_arabic(text: str) -> str:
+    """توحيد النص العربي لتحسين البحث والترتيب."""
+    text = unicodedata.normalize("NFKD", text.strip().lower())
+
+    # حذف التشكيل والتطويل
+    text = re.sub(r"[\u064B-\u065F\u0670\u0640]", "", text)
+
+    # توحيد أكثر أشكال الحروف اختلافا في الكتابة
+    replacements = str.maketrans(
+        {
+            "أ": "ا",
+            "إ": "ا",
+            "آ": "ا",
+            "ٱ": "ا",
+            "ى": "ي",
+            "ؤ": "و",
+            "ئ": "ي",
+            "ة": "ه",
+        }
+    )
+    text = text.translate(replacements)
+
+    # حذف المسافات المتكررة
+    return " ".join(text.split())
+
+
+def matches_search(place: dict, query: str) -> bool:
+    """التحقق من وجود عبارة البحث في بيانات المكان."""
+    normalized_query = normalize_arabic(query)
+
+    searchable_fields = [
+        place["name"],
+        place["category"],
+        place["location"],
+        place["desc"],
+    ]
+
+    return any(
+        normalized_query in normalize_arabic(field)
+        for field in searchable_fields
+    )
+
+
+# أدوات التصفية
 st.sidebar.header("⚙️ أدوات التصفية والبحث")
 
-# استخراج كل التصنيفات المتاحة ديناميكياً لتصنيف أي شيء
 all_categories = ["الكل"] + sorted(
-    list(set([item["category"] for item in attractions]))
+    {item["category"] for item in attractions},
+    key=normalize_arabic,
 )
-selected_category = st.sidebar.selectbox("اختر التصنيف:", all_categories)
 
-# خيارات الترتيب
+selected_category = st.sidebar.selectbox(
+    "اختر التصنيف:",
+    all_categories,
+)
+
 sort_option = st.sidebar.selectbox(
     "ترتيب النتائج حسب:",
-    ["التقييم (الأعلى أولاً)", "الترتيب الأبجدي (أ - ي)"],
+    [
+        "التقييم (الأعلى أولا)",
+        "الترتيب الأبجدي (أ - ي)",
+    ],
 )
 
-# 4. تصفية البيانات بناءً على التصنيف المختار
-if selected_category == "الكل":
-  filtered_data = attractions.copy()
-else:
-  filtered_data = [
-      item for item in attractions if item["category"] == selected_category
-  ]
+minimum_rating = st.sidebar.slider(
+    "الحد الأدنى للتقييم:",
+    min_value=0.0,
+    max_value=5.0,
+    value=0.0,
+    step=0.1,
+)
 
-# 5. تطبيق الترتيب
-if sort_option == "التقييم (الأعلى أولاً)":
-  filtered_data = sorted(filtered_data, key=lambda x: x["rating"], reverse=True)
-elif sort_option == "الترتيب الأبجدي (أ - ي)":
-  filtered_data = sorted(filtered_data, key=lambda x: x["name"])
 
-# 6. قسم البحث النصي الحر
+# البحث
 search_query = st.text_input(
-    "🔍 ابحث عن أي مكان أو مقهى (مثال: أبارت، قصر، عيون):"
+    "🔍 ابحث باسم المكان أو الوصف أو التصنيف أو الموقع:",
+    placeholder="مثال: أبارت، قصر، عيون",
 )
-if search_query:
-  filtered_data = [
-      item
-      for item in filtered_data
-      if search_query.lower() in item["name"].lower()
-      or search_query.lower() in item["desc"].lower()
-      or search_query.lower() in item["category"].lower()
-  ]
 
-# 7. عرض النتائج بشكل مرتب ومنظم مع روابط خرائط جوجل
-st.markdown("---")
-st.subheader(f"📋 النتائج المعروضة ({len(filtered_data)} مكان):")
+
+# تطبيق التصفية
+filtered_data = [
+    place
+    for place in attractions
+    if (
+        selected_category == "الكل"
+        or place["category"] == selected_category
+    )
+    and place["rating"] >= minimum_rating
+    and (
+        not search_query.strip()
+        or matches_search(place, search_query)
+    )
+]
+
+
+# تطبيق الترتيب
+if sort_option == "التقييم (الأعلى أولا)":
+    filtered_data.sort(
+        key=lambda place: place["rating"],
+        reverse=True,
+    )
+else:
+    filtered_data.sort(
+        key=lambda place: normalize_arabic(place["name"]),
+    )
+
+
+# عرض النتائج
+st.divider()
+st.subheader(f"📋 النتائج المعروضة: {len(filtered_data)} مكان")
 
 if not filtered_data:
-  st.warning("عذراً، لم نجد نتائج مطابقة لبحثك أو التصنيف المختار.")
+    st.warning(
+        "عذرا، لم نجد نتائج مطابقة للبحث أو خيارات التصفية المحددة."
+    )
 else:
-  for place in filtered_data:
-    with st.container():
-      col1, col2 = st.columns([3, 1])
-      with col1:
-        st.subheader(f"{place['name']} ({place['rating']} ⭐)")
-        st.write(
-            f"**التصنيف:** {place['category']} | **الموقع:**"
-            f" {place['location']}"
-        )
-        st.write(place["desc"])
-      with col2:
-        maps_url = (
-            f"https://www.google.com/maps/search/?api=1&query={place['name']}"
-            " الخرج"
-        )
-        st.link_button("🗺️ خرائط جوجل", maps_url)
-      st.markdown("---")
+    for place in filtered_data:
+        with st.container(border=True):
+            details_column, map_column = st.columns([3, 1])
+
+            with details_column:
+                st.subheader(place["name"])
+                st.markdown(
+                    f"**التصنيف:** {place['category']}  \n"
+                    f"**الموقع:** {place['location']}  \n"
+                    f"**التقييم:** {place['rating']:.1f} من 5 ⭐"
+                )
+                st.progress(place["rating"] / 5)
+                st.write(place["desc"])
+
+            with map_column:
+                map_query = quote_plus(
+                    f"{place['name']}، {place['location']}، السعودية"
+                )
+                maps_url = (
+                    "[google.com](https://www.google.com/maps/search/)"
+                    f"?api=1&query={map_query}"
+                )
+
+                st.link_button(
+                    "🗺️ خرائط Google",
+                    maps_url,
+                    use_container_width=True,
+                )
