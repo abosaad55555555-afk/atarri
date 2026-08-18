@@ -1,249 +1,176 @@
 import re
 import unicodedata
 from urllib.parse import quote_plus
-
 import streamlit as st
+import pandas as pd
 
-
-# إعداد الصفحة
+# ==========================================
+# 1. إعداد الصفحة والاتجاه (RTL)
+# ==========================================
 st.set_page_config(
     page_title="دليل الخرج الشامل",
     page_icon="🌟",
     layout="centered",
 )
 
-# دعم اتجاه الكتابة من اليمين إلى اليسار
 st.markdown(
     """
     <style>
         .stApp {
             direction: rtl;
             text-align: right;
+            font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
         section[data-testid="stSidebar"] {
             direction: rtl;
             text-align: right;
         }
-
-        div[data-testid="stTextInput"] input {
+        div[data-testid="stTextInput"] input, 
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
             direction: rtl;
             text-align: right;
         }
-
-        div[data-testid="stSelectbox"] {
-            direction: rtl;
-            text-align: right;
+        .place-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background-color: #fcfcfc;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: 0.3s;
+        }
+        .place-card:hover {
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        }
+        .map-btn {
+            text-decoration: none;
+            background-color: #3498db;
+            color: white !important;
+            padding: 8px 16px;
+            border-radius: 8px;
+            display: inline-block;
+            margin-top: 10px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .map-btn:hover {
+            background-color: #2980b9;
         }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
+# ==========================================
+# 2. العنوان والوصف
+# ==========================================
 st.title("🌟 دليل الخرج الشامل للتصنيفات والمعالم")
-st.markdown(
-    """
-    استكشف الأماكن والمقاهي والمعالم في الخرج، مع إمكانية التصفية حسب
-    التصنيف، والترتيب حسب التقييم أو الأبجدية، والبحث المباشر، وفتح
-    المواقع على خرائط Google.
-    """
-)
+st.markdown("استكشف الأماكن، المقاهي، والمعالم في الخرج. يمكنك البحث بالكلمات الإنجليزية أو العربية (مثل: cafe, مطعم, السيح).")
+st.markdown("---")
 
-
-# قاعدة البيانات
-attractions = [
-    {
-        "name": "أبارت كافيه (Apart Cafe)",
-        "category": "مقاهي ومطاعم",
-        "rating": 4.9,
-        "location": "الخرج",
-        "desc": (
-            "مقهى متخصص عصري يتميز بديكورات راقية وجلسات هادئة، "
-            "ويقدم تشكيلة مميزة من القهوة المختصة والمخبوزات الطازجة."
-        ),
-    },
-    {
-        "name": "قصر الملك عبد العزيز التاريخي",
-        "category": "معالم تاريخية",
-        "rating": 4.8,
-        "location": "وسط الخرج",
-        "desc": (
-            "من أهم المعالم التاريخية، بني في عام 1359 هـ "
-            "بتصميم معماري نجدي فريد من الطين."
-        ),
-    },
-    {
-        "name": "مزارع الخرج الزراعية",
-        "category": "سياحة بيئية",
-        "rating": 4.7,
-        "location": "الخرج",
-        "desc": (
-            "تشتهر بمزارع النخيل الشاسعة وتوفر تجارب سياحة ريفية فريدة."
-        ),
-    },
-    {
-        "name": "عيون الخرج (عين الضلع)",
-        "category": "طبيعة",
-        "rating": 4.5,
-        "location": "أطراف الخرج",
-        "desc": (
-            "عيون ارتوازية طبيعية تاريخية كانت شريان الحياة الزراعي قديما."
-        ),
-    },
-    {
-        "name": "منتزه البرج",
-        "category": "منتزهات وترفيه",
-        "rating": 4.2,
-        "location": "الخرج",
-        "desc": (
-            "وجهة عائلية ممتازة تضم مساحات خضراء ومناطق ألعاب أطفال."
-        ),
-    },
-]
-
-
-def normalize_arabic(text: str) -> str:
-    """توحيد النص العربي لتحسين البحث والترتيب."""
-    text = unicodedata.normalize("NFKD", text.strip().lower())
-
-    # حذف التشكيل والتطويل
-    text = re.sub(r"[\u064B-\u065F\u0670\u0640]", "", text)
-
-    # توحيد أكثر أشكال الحروف اختلافا في الكتابة
-    replacements = str.maketrans(
-        {
-            "أ": "ا",
-            "إ": "ا",
-            "آ": "ا",
-            "ٱ": "ا",
-            "ى": "ي",
-            "ؤ": "و",
-            "ئ": "ي",
-            "ة": "ه",
-        }
-    )
-    text = text.translate(replacements)
-
-    # حذف المسافات المتكررة
-    return " ".join(text.split())
-
-
-def matches_search(place: dict, query: str) -> bool:
-    """التحقق من وجود عبارة البحث في بيانات المكان."""
-    normalized_query = normalize_arabic(query)
-
-    searchable_fields = [
-        place["name"],
-        place["category"],
-        place["location"],
-        place["desc"],
+# ==========================================
+# 3. البيانات التجريبية
+# ==========================================
+@st.cache_data
+def load_data():
+    data = [
+        {"الاسم": "مقهى البيك", "التصنيف": "مقاهي", "التقييم": 4.5, "المنطقة": "السيح"},
+        {"الاسم": "مطعم الشاورجي", "التصنيف": "مطاعم", "التقييم": 4.2, "المنطقة": "السيح"},
+        {"الاسم": "حديقة الملك فهد", "التصنيف": "حدائق", "التقييم": 4.7, "المنطقة": "السيح"},
+        {"الاسم": "قصر الملك عبدالعزيز التاريخي", "التصنيف": "معالم", "التقييم": 4.9, "المنطقة": "الدلم"},
+        {"الاسم": "مقهى سكسبري", "التصنيف": "مقاهي", "التقييم": 4.3, "المنطقة": "الدلم"},
+        {"الاسم": "مقهى كافيهات", "التصنيف": "مقاهي", "التقييم": 4.8, "المنطقة": "السيح"},
+        {"الاسم": "مطعم كودو", "التصنيف": "مطاعم", "التقييم": 4.0, "المنطقة": "السيح"},
+        {"الاسم": "مطعم البيك", "التصنيف": "مطاعم", "التقييم": 4.6, "المنطقة": "الدلم"},
+        {"الاسم": "حديقة الصالحية", "التصنيف": "حدائق", "التقييم": 4.4, "المنطقة": "الصالحية"},
+        {"الاسم": "سد الملك فهد", "التصنيف": "معالم", "التقييم": 4.6, "المنطقة": "الخرج"},
     ]
+    return pd.DataFrame(data)
 
-    return any(
-        normalized_query in normalize_arabic(field)
-        for field in searchable_fields
-    )
+df = load_data()
 
+# ==========================================
+# 4. أدوات التصفية والبحث (Filters)
+# ==========================================
+col1, col2, col3 = st.columns(3)
 
-# أدوات التصفية
-st.sidebar.header("⚙️ أدوات التصفية والبحث")
+with col1:
+    search_query = st.text_input("🔍 البحث الذكي", placeholder="اكتب: cafe, مطعم, السيح...")
 
-all_categories = ["الكل"] + sorted(
-    {item["category"] for item in attractions},
-    key=normalize_arabic,
-)
+with col2:
+    categories = ["الكل"] + sorted(df["التصنيف"].unique().tolist())
+    selected_category = st.selectbox("📂 التصنيف", categories)
 
-selected_category = st.sidebar.selectbox(
-    "اختر التصنيف:",
-    all_categories,
-)
+with col3:
+    sort_options = ["التقييم (الأعلى أولاً)", "الاسم (أبجدياً)"]
+    sort_by = st.selectbox("⬇️ ترتيب حسب", sort_options)
 
-sort_option = st.sidebar.selectbox(
-    "ترتيب النتائج حسب:",
-    [
-        "التقييم (الأعلى أولا)",
-        "الترتيب الأبجدي (أ - ي)",
-    ],
-)
+# ==========================================
+# 5. منطق البحث الذكي (Smart Search Logic)
+# ==========================================
+filtered_df = df.copy()
 
-minimum_rating = st.sidebar.slider(
-    "الحد الأدنى للتقييم:",
-    min_value=0.0,
-    max_value=5.0,
-    value=0.0,
-    step=0.1,
-)
+# قاموس لتحويل الكلمات الإنجليزية والشائعة إلى التصنيفات العربية
+search_aliases = {
+    "cafe": "مقاهي", "cafes": "مقاهي", "coffee": "مقاهي", "مقهى": "مقاهي",
+    "restaurant": "مطاعم", "restaurants": "مطاعم", "food": "مطاعم", "مطعم": "مطاعم",
+    "park": "حدائق", "parks": "حدائق", "garden": "حدائق", "حديقة": "حدائق",
+    "landmark": "معالم", "landmarks": "معالم", "معلم": "معالم", "historical": "معالم"
+}
 
+if search_query:
+    query_lower = search_query.strip().lower()
+    
+    # 1. التحقق مما إذا كانت الكلمة المطابقة هي "تصنيف" (مثل كتابة cafe)
+    if query_lower in search_aliases:
+        target_category = search_aliases[query_lower]
+        filtered_df = filtered_df[filtered_df["التصنيف"] == target_category]
+    else:
+        # 2. إذا لم تكن تصنيفاً، نبحث في (الاسم، التصنيف، المنطقة) معاً
+        mask = (
+            filtered_df["الاسم"].str.contains(search_query, case=False, na=False) |
+            filtered_df["التصنيف"].str.contains(search_query, case=False, na=False) |
+            filtered_df["المنطقة"].str.contains(search_query, case=False, na=False)
+        )
+        filtered_df = filtered_df[mask]
 
-# البحث
-search_query = st.text_input(
-    "🔍 ابحث باسم المكان أو الوصف أو التصنيف أو الموقع:",
-    placeholder="مثال: أبارت، قصر، عيون",
-)
+# تطبيق التصفية من القائمة المنسدلة (إذا لم يكن "الكل")
+if selected_category != "الكل":
+    filtered_df = filtered_df[filtered_df["التصنيف"] == selected_category]
 
-
-# تطبيق التصفية
-filtered_data = [
-    place
-    for place in attractions
-    if (
-        selected_category == "الكل"
-        or place["category"] == selected_category
-    )
-    and place["rating"] >= minimum_rating
-    and (
-        not search_query.strip()
-        or matches_search(place, search_query)
-    )
-]
-
-
-# تطبيق الترتيب
-if sort_option == "التقييم (الأعلى أولا)":
-    filtered_data.sort(
-        key=lambda place: place["rating"],
-        reverse=True,
-    )
+# ==========================================
+# 6. الترتيب وعرض النتائج
+# ==========================================
+if sort_by == "التقييم (الأعلى أولاً)":
+    filtered_df = filtered_df.sort_values(by="التقييم", ascending=False)
 else:
-    filtered_data.sort(
-        key=lambda place: normalize_arabic(place["name"]),
-    )
-
+    filtered_df = filtered_df.sort_values(by="الاسم")
 
 # عرض النتائج
-st.divider()
-st.subheader(f"📋 النتائج المعروضة: {len(filtered_data)} مكان")
-
-if not filtered_data:
-    st.warning(
-        "عذرا، لم نجد نتائج مطابقة للبحث أو خيارات التصفية المحددة."
-    )
+if filtered_df.empty:
+    st.warning("⚠️ لا توجد نتائج مطابقة لبحثك. حاول تغيير معايير البحث.")
 else:
-    for place in filtered_data:
-        with st.container(border=True):
-            details_column, map_column = st.columns([3, 1])
-
-            with details_column:
-                st.subheader(place["name"])
-                st.markdown(
-                    f"**التصنيف:** {place['category']}  \n"
-                    f"**الموقع:** {place['location']}  \n"
-                    f"**التقييم:** {place['rating']:.1f} من 5 ⭐"
-                )
-                st.progress(place["rating"] / 5)
-                st.write(place["desc"])
-
-            with map_column:
-                map_query = quote_plus(
-                    f"{place['name']}، {place['location']}، السعودية"
-                )
-                maps_url = (
-                    "[google.com](https://www.google.com/maps/search/)"
-                    f"?api=1&query={map_query}"
-                )
-
-                st.link_button(
-                    "🗺️ خرائط Google",
-                    maps_url,
-                    use_container_width=True,
-                )
+    st.success(f"✅ تم العثور على {len(filtered_df)} نتيجة.")
+    
+    for index, row in filtered_df.iterrows():
+        location_query = quote_plus(f"{row['الاسم']} {row['المنطقة']} الخرج")
+        map_url = f"https://www.google.com/maps/search/?api=1&query={location_query}"
+        
+        icon = "☕" if row["التصنيف"] == "مقاهي" else "🍽️" if row["التصنيف"] == "مطاعم" else "🌳" if row["التصنيف"] == "حدائق" else "🏛️"
+        
+        st.markdown(
+            f"""
+            <div class="place-card">
+                <h3 style="margin:0 0 10px 0; color:#2c3e50;">{icon} {row['الاسم']}</h3>
+                <p style="margin:5px 0; color:#7f8c8d; font-size:15px;">
+                    📍 <strong>المنطقة:</strong> {row['المنطقة']} &nbsp; | &nbsp; 
+                    ⭐ <strong>التقييم:</strong> {row['التقييم']} &nbsp; | &nbsp; 
+                    🏷️ <strong>التصنيف:</strong> {row['التصنيف']}
+                </p>
+                <a href="{map_url}" target="_blank" class="map-btn">
+                    🗺️ فتح في خرائط Google
+                </a>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
